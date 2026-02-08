@@ -27,3 +27,9 @@ export const CATEGORY_MAPPING: Record<string, string> = {
   condiment: "调料",
   drink: "饮品",
 };
+
+// vector store entry
+export interface VectorEntry {
+  vector: number[];
+  document: Document;
+}
