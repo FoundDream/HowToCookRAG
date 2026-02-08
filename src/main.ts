@@ -1,5 +1,5 @@
 import DataPreparation from "./modules/data_preparation";
-import { dataPath } from "./config";
+import { dataPath, vectorIndexPath } from "./config";
 import IndexConstruction from "./modules/index_construction";
 
 const dp = new DataPreparation(dataPath);
@@ -8,7 +8,7 @@ const chunks = dp.chunkDocuments();
 
 const idx = new IndexConstruction();
 await idx.buildVectorIndex(chunks);
-idx.saveIndex("./vector_index.json");
+idx.saveIndex(vectorIndexPath);
 
 const results = await idx.similaritySearch("红烧肉怎么做", 3);
 results.forEach((doc) => {

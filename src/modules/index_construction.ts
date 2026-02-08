@@ -1,3 +1,11 @@
+/**
+ * 索引构建模块
+ * 负责构建向量索引、保存索引、加载索引、计算相似度等
+ *
+ * 使用 OpenAI 的 text-embedding-3-small 模型生成向量
+ * 使用 cosine similarity 计算相似度
+ */
+
 import { VectorEntry } from "../types";
 import aiClient from "./ai_client";
 import { Document } from "../types";
