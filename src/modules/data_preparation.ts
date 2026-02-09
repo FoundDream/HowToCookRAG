@@ -41,7 +41,6 @@ class DataPreparation {
       this.enhanceMetadata(document);
       this.documents.push(document);
     }
-    console.log(this.markdownHeaderSplit(this.documents[0].pageContent));
     return this.documents;
   }
 
