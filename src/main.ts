@@ -3,13 +3,16 @@ import IndexConstruction from "./modules/index_construction";
 import Retrieval from "./modules/retrieval";
 import Generation from "./modules/generation";
 import readline from "readline";
+import { log } from "./logger";
 
 async function main() {
+  const totalElapsed = log.timer();
+  log.step("Main", "========== RAG 系统启动 ==========");
+
   // 1. 数据准备
   const dp = new DataPreparation("../../data/C8/cook");
   const docs = dp.loadDocuments();
   const chunks = dp.chunkDocuments();
-  console.log(`加载 ${docs.length} 个文档，分成 ${chunks.length} 个 chunk`);
 
   // 2. 索引构建（优先加载已有索引）
   const idx = new IndexConstruction();
@@ -24,6 +27,12 @@ async function main() {
 
   // 4. 生成模块
   const gen = new Generation();
+
+  log.step("Main", `初始化完成 (${totalElapsed()}ms)`, {
+    文档数: docs.length,
+    chunk数: chunks.length,
+    索引来源: loaded ? "从文件加载" : "新构建",
+  });
 
   // 5. 交互式问答
   const rl = readline.createInterface({
@@ -40,17 +49,25 @@ async function main() {
         return;
       }
 
+      const queryElapsed = log.timer();
+      log.step("Main", `>>> 新查询: "${query}"`);
+
       try {
         // 检索子块
         const relevant = await retrieval.hybridSearch(query, 3);
-        console.log(`检索到 ${relevant.length} 个相关片段`);
 
         // 回溯父文档
         const parentDocs = dp.getParentDocuments(relevant);
-        console.log(`对应 ${parentDocs.length} 个完整文档`);
+        log.step("Main", "父文档回溯完成", {
+          子chunk数: relevant.length,
+          父文档数: parentDocs.length,
+          父文档菜名: parentDocs.map((d) => d.metadata.dishName),
+        });
 
         // 生成回答
         const answer = await gen.answer(query, parentDocs);
+
+        log.step("Main", `<<< 查询完成 (${queryElapsed()}ms)`);
         console.log(`\n${answer}\n`);
       } catch (err) {
         console.error("出错:", err);

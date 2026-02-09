@@ -1,5 +1,6 @@
 import IndexConstruction from "./index_construction";
 import { Document } from "../types";
+import { log } from "../logger";
 
 class Retrieval {
   private indexModule: IndexConstruction;
@@ -14,11 +15,23 @@ class Retrieval {
   }
 
   bm25Search(query: string, k: number): Document[] {
+    const elapsed = log.timer();
     const scores = this.bm25.search(query, k);
-    // 按分数排序，返回前 k 个对应的 Document
     const indexed = scores.map((score, i) => ({ score, i }));
     indexed.sort((a, b) => b.score - a.score);
-    return indexed.slice(0, k).map((item) => this.chunks[item.i]);
+    const results = indexed.slice(0, k);
+
+    log.step("Retrieval", `bm25Search 完成 (${elapsed()}ms)`, {
+      查询: query,
+      "返回Top-K": k,
+      结果: results.map((item) => ({
+        菜名: this.chunks[item.i].metadata.dishName,
+        BM25分数: item.score.toFixed(4),
+        内容预览: this.chunks[item.i].pageContent.slice(0, 50),
+      })),
+    });
+
+    return results.map((item) => this.chunks[item.i]);
   }
 
   private rrfRerank(
@@ -44,18 +57,42 @@ class Retrieval {
     });
 
     // 按总分降序
-    return [...scores.entries()]
-      .sort((a, b) => b[1] - a[1])
-      .map(([id]) => docMap.get(id)!);
+    const sorted = [...scores.entries()].sort((a, b) => b[1] - a[1]);
+
+    log.step("Retrieval", "RRF 重排序完成", {
+      向量候选数: vectorDocs.length,
+      BM25候选数: bm25Docs.length,
+      融合后排序: sorted.map(([id, score]) => ({
+        chunkId: id.slice(0, 8) + "...",
+        菜名: docMap.get(id)!.metadata.dishName,
+        RRF分数: score.toFixed(6),
+      })),
+    });
+
+    return sorted.map(([id]) => docMap.get(id)!);
   }
 
   async hybridSearch(query: string, topK = 3): Promise<Document[]> {
+    const elapsed = log.timer();
+    log.step("Retrieval", `hybridSearch 开始`, { 查询: query, topK });
+
     const vectorDocs = await this.indexModule.similaritySearch(query, 5);
     const bm25Docs = this.bm25Search(query, 5);
     const reranked = this.rrfRerank(vectorDocs, bm25Docs);
-    return reranked.slice(0, topK);
+    const results = reranked.slice(0, topK);
+
+    log.step("Retrieval", `hybridSearch 完成 (${elapsed()}ms)`, {
+      最终返回数: results.length,
+      最终结果: results.map((d) => ({
+        菜名: d.metadata.dishName,
+        内容预览: d.pageContent.slice(0, 60),
+      })),
+    });
+
+    return results;
   }
 
+  // TODO: 元数据过滤搜索
   async metadataFilteredSearch(
     query: string,
     filters: Record<string, string>,
@@ -73,6 +110,7 @@ class Retrieval {
   }
 }
 
+// 分词
 function tokenize(text: string): string[] {
   return text
     .replace(/[，。！？、；：""''（）\s\n#*\-]/g, " ")

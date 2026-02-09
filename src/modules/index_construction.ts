@@ -10,6 +10,7 @@ import { VectorEntry } from "../types";
 import aiClient from "./ai_client";
 import { Document } from "../types";
 import fs from "fs";
+import { log } from "../logger";
 
 class IndexConstruction {
   private index: VectorEntry[] = [];
@@ -27,7 +28,10 @@ class IndexConstruction {
   }
 
   async buildVectorIndex(chunks: Document[]): Promise<void> {
-    console.log(`building vector index...`);
+    const elapsed = log.timer();
+    log.step("Index", "buildVectorIndex 开始", {
+      待处理chunk数: chunks.length,
+    });
 
     for (let i = 0; i < chunks.length; i++) {
       const chunk = chunks[i];
@@ -37,39 +41,64 @@ class IndexConstruction {
         document: chunk,
       });
 
-      // 每 50 个打印一次进度
       if ((i + 1) % 50 === 0) {
-        console.log(`已处理 ${i + 1}/${chunks.length}`);
+        log.step("Index", `进度 ${i + 1}/${chunks.length}`, {
+          耗时: `${elapsed()}ms`,
+        });
       }
     }
-    console.log(`vector index built successfully, ${this.index.length} chunks`);
+
+    log.step("Index", `buildVectorIndex 完成 (${elapsed()}ms)`, {
+      索引条数: this.index.length,
+      向量维度: this.index[0]?.vector.length,
+    });
   }
 
   async similaritySearch(query: string, k: number): Promise<Document[]> {
+    const elapsed = log.timer();
     const queryVector = await this.getEmbedding(query);
 
-    // 计算与所有向量的相似度
     const scored = this.index.map((entry) => ({
       document: entry.document,
       score: this.cosineSimilarity(queryVector, entry.vector),
     }));
 
-    // 按相似度排序
     scored.sort((a, b) => b.score - a.score);
+    const results = scored.slice(0, k);
 
-    // 返回前 k 个结果
-    return scored.slice(0, k).map((entry) => entry.document);
+    log.step("Index", `similaritySearch 完成 (${elapsed()}ms)`, {
+      查询: query,
+      候选总数: this.index.length,
+      "返回Top-K": k,
+      结果: results.map((r) => ({
+        菜名: r.document.metadata.dishName,
+        分数: r.score.toFixed(4),
+        内容预览: r.document.pageContent.slice(0, 50),
+      })),
+    });
+
+    return results.map((entry) => entry.document);
   }
 
   saveIndex(filePath: string): void {
     fs.writeFileSync(filePath, JSON.stringify(this.index));
-    console.log(`索引已保存到 ${filePath}`);
+    log.step("Index", "saveIndex 完成", {
+      路径: filePath,
+      索引条数: this.index.length,
+    });
   }
 
   loadIndex(filePath: string): boolean {
-    if (!fs.existsSync(filePath)) return false;
+    if (!fs.existsSync(filePath)) {
+      log.step("Index", "loadIndex 未找到索引文件", { 路径: filePath });
+      return false;
+    }
+    const elapsed = log.timer();
     this.index = JSON.parse(fs.readFileSync(filePath, "utf-8"));
-    console.log(`已加载索引，共 ${this.index.length} 条`);
+    log.step("Index", `loadIndex 完成 (${elapsed()}ms)`, {
+      路径: filePath,
+      索引条数: this.index.length,
+    });
     return true;
   }
 

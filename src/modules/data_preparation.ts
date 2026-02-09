@@ -7,6 +7,7 @@ import { CATEGORY_MAPPING, Document } from "../types";
 import { globSync, readFileSync } from "node:fs";
 import crypto from "crypto";
 import path from "node:path";
+import { log } from "../logger";
 
 class DataPreparation {
   private dataPath: string;
@@ -22,7 +23,12 @@ class DataPreparation {
   }
 
   loadDocuments(): Document[] {
+    const elapsed = log.timer();
     const files = globSync(`${this.dataPath}/**/*.md`);
+    log.step("DataPrep", "loadDocuments 开始", {
+      dataPath: this.dataPath,
+      发现文件数: files.length,
+    });
 
     for (const filePath of files) {
       const content = readFileSync(filePath, "utf8");
@@ -41,10 +47,26 @@ class DataPreparation {
       this.enhanceMetadata(document);
       this.documents.push(document);
     }
+
+    log.step("DataPrep", `loadDocuments 完成 (${elapsed()}ms)`, {
+      文档总数: this.documents.length,
+      示例文档: this.documents[0]?.metadata,
+      分类分布: Object.entries(
+        this.documents.reduce(
+          (acc, d) => {
+            const cat = d.metadata.category || "未分类";
+            acc[cat] = (acc[cat] || 0) + 1;
+            return acc;
+          },
+          {} as Record<string, number>,
+        ),
+      ),
+    });
     return this.documents;
   }
 
   chunkDocuments(): Document[] {
+    const elapsed = log.timer();
     const allChunks: Document[] = [];
 
     for (const document of this.documents) {
@@ -68,9 +90,15 @@ class DataPreparation {
       }
     }
     this.chunks = allChunks;
-    console.log(
-      `${this.documents.length} documents, ${this.chunks.length} chunks`,
-    );
+
+    const chunkLens = allChunks.map((c) => c.pageContent.length);
+    log.step("DataPrep", `chunkDocuments 完成 (${elapsed()}ms)`, {
+      文档数: this.documents.length,
+      chunk总数: allChunks.length,
+      平均每文档chunk数: (allChunks.length / this.documents.length).toFixed(1),
+      "chunk长度(min/avg/max)": `${Math.min(...chunkLens)} / ${Math.round(chunkLens.reduce((a, b) => a + b, 0) / chunkLens.length)} / ${Math.max(...chunkLens)}`,
+      示例chunk: allChunks[0]?.pageContent.slice(0, 100),
+    });
     return allChunks;
   }
 

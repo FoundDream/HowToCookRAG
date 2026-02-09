@@ -1,5 +1,6 @@
 import { Document } from "../types";
 import aiClient from "./ai_client";
+import { log } from "../logger";
 
 class Generation {
   private model: string;
@@ -139,26 +140,50 @@ ${context}
 
   /** 完整的问答流程：路由 → 重写 → 生成 */
   async answer(query: string, docs: Document[]): Promise<string> {
+    const elapsed = log.timer();
+    log.step("Generation", "answer 流程开始", {
+      原始查询: query,
+      输入文档数: docs.length,
+      文档菜名: docs.map((d) => d.metadata.dishName),
+    });
+
     // 1. 路由
     const routeType = await this.queryRouter(query);
-    console.log(`查询类型: ${routeType}`);
+    log.step("Generation", "queryRouter 完成", {
+      查询类型: routeType,
+    });
 
     // 2. 列表查询直接返回
     if (routeType === "list") {
-      return this.generateListAnswer(docs);
+      const result = this.generateListAnswer(docs);
+      log.step("Generation", `answer 完成 [list] (${elapsed()}ms)`, {
+        输出: result,
+      });
+      return result;
     }
 
     // 3. 其他查询先重写
     const rewritten = await this.queryRewrite(query);
-    if (rewritten !== query) {
-      console.log(`查询重写: "${query}" → "${rewritten}"`);
-    }
+    log.step("Generation", "queryRewrite 完成", {
+      原始查询: query,
+      重写后: rewritten,
+      是否改写: rewritten !== query,
+    });
 
     // 4. 根据类型生成回答
+    let result: string;
     if (routeType === "detail") {
-      return this.generateStepByStepAnswer(rewritten, docs);
+      result = await this.generateStepByStepAnswer(rewritten, docs);
+    } else {
+      result = await this.generateBasicAnswer(rewritten, docs);
     }
-    return this.generateBasicAnswer(rewritten, docs);
+
+    log.step("Generation", `answer 完成 [${routeType}] (${elapsed()}ms)`, {
+      输出长度: result.length,
+      输出预览: result.slice(0, 150),
+    });
+
+    return result;
   }
 }
 
